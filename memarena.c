@@ -10,6 +10,7 @@ typedef struct header_t {
     size_t size;        // size of the block not including the header
     unsigned is_free;  
     struct header_t *next;  
+    struct header_t *prev;
 } header_t;
 
 // linked list of memory blocks
@@ -43,27 +44,56 @@ void split_block(header_t *block, size_t requested_size){
         remainder->size = block->size - min_block_size - requested_size;
         remainder->is_free = 1;
         remainder->next = block->next;
+        remainder->prev = block;
+
+        if(remainder->next){
+            remainder->next->prev = remainder;
+        }
 
         // change block size to aligned size
         block->size = requested_size;
         block->next = remainder;
+
+        if(block == tail){
+            tail = remainder;
+        }
     }
 }
 
 // merging function
 // at the moment, it only does front merging
 void coalesce(header_t *curr) {
-    while (curr->next && curr->next->is_free) {
-        
+    
+   if (curr->next && curr->next->is_free) {
         void *curr_end = (char*)curr + sizeof(header_t) + curr->size;
-
-        // only merge if physically adjacent
-        if (curr_end != (void*)curr->next) {
-            break;
+        if (curr_end == (void*)curr->next) {
+            
+            curr->size += sizeof(header_t) + curr->next->size;
+            
+            curr->next = curr->next->next;
+            if (curr->next) {
+                curr->next->prev = curr;
+            } else {
+                tail = curr;
+            }
         }
+    }
 
-        curr->size += sizeof(header_t) + curr->next->size;
-        curr->next = curr->next->next;
+    if(curr->prev && curr->prev->is_free){
+        
+        void *prev_end = (char*)curr->prev + sizeof(header_t) + curr->prev->size;
+
+        if(prev_end == (void*)curr){
+            curr->prev->size += sizeof(header_t) + curr->size;
+
+            curr->prev->next = curr->next;
+
+            if(curr->next){
+                curr->next->prev = curr->prev;
+            } else{
+                tail = curr->prev;
+            }
+        }
     }
 }
 
@@ -103,6 +133,7 @@ void *my_malloc(size_t size) {
     header->size = size;
     header->is_free = 0;
     header->next = NULL;
+    header->prev = tail;
 
     if (!head) 
         head = header;
