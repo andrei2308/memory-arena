@@ -98,7 +98,6 @@ void coalesce(header_t *curr) {
 }
 
 void *my_malloc(size_t size) {
-    size_t total_size;
     void *block;
     header_t *header;
 
@@ -118,10 +117,15 @@ void *my_malloc(size_t size) {
         return (void*)(header + 1); // return a pointer to user data, 8 bytes after the header
     }
 
-    total_size = sizeof(header_t) + size;
+    long page_size = sysconf(_SC_PAGE_SIZE);
+
+    size_t required_size = sizeof(header_t) + size;
+
+    size_t num_pages = (required_size + page_size - 1) / page_size;
+    size_t mmap_size = num_pages * page_size;
 
     // request memory from the OS if no suitable block is found
-    block = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    block = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     if (block == MAP_FAILED) {
         pthread_mutex_unlock(&global_malloc_lock);
@@ -129,9 +133,9 @@ void *my_malloc(size_t size) {
     }
 
     // add the new block to the linked list
-    header = block;
-    header->size = size;
-    header->is_free = 0;
+    header = (header_t*)block;
+    header->size = mmap_size - sizeof(header_t);
+    header->is_free = 1; // marking as free so we can split it
     header->next = NULL;
     header->prev = tail;
 
@@ -141,6 +145,9 @@ void *my_malloc(size_t size) {
         tail->next = header;
     
     tail = header;
+
+    split_block(header,size);
+    header->is_free = 0;
     
     pthread_mutex_unlock(&global_malloc_lock);
     return (void*)(header + 1); // return pointer to user data, 8 bytes after the header
