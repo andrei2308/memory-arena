@@ -3,6 +3,9 @@
 #include <pthread.h>
 #include <sys/mman.h>
 
+#define ALIGNMENT 8 // we can change this to whatever but it must be a power of 2
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // size round up 
+
 typedef struct header_t {
     size_t size;        // size of the block not including the header
     unsigned is_free;  
@@ -25,6 +28,28 @@ header_t *get_free_block(size_t size) {
     return NULL;
 }
 
+// split block 
+void split_block(header_t *block, size_t requested_size){
+
+    size_t min_block_size = sizeof(header_t);
+
+    if(block->size > requested_size + min_block_size){
+
+        // move the pointer in the current block after the memory that will be given to the user
+        header_t* remainder = (header_t*)((char*)block + min_block_size + requested_size);
+
+        // calculate the remaining size after giving memory to the user
+        // mark block as free
+        remainder->size = block->size - min_block_size - requested_size;
+        remainder->is_free = 1;
+        remainder->next = block->next;
+
+        // change block size to aligned size
+        block->size = requested_size;
+        block->next = remainder;
+    }
+}
+
 void *my_malloc(size_t size) {
     size_t total_size;
     void *block;
@@ -35,8 +60,12 @@ void *my_malloc(size_t size) {
 
     pthread_mutex_lock(&global_malloc_lock);
 
+    size = ALIGN(size);
+
     header = get_free_block(size);
     if (header) {
+        split_block(header,size);
+
         header->is_free = 0;
         pthread_mutex_unlock(&global_malloc_lock);
         return (void*)(header + 1); // return a pointer to user data, 8 bytes after the header
