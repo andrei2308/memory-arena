@@ -28,7 +28,7 @@ header_t *get_free_block(size_t size) {
     return NULL;
 }
 
-// split block 
+// split block  
 void split_block(header_t *block, size_t requested_size){
 
     size_t min_block_size = sizeof(header_t);
@@ -47,6 +47,23 @@ void split_block(header_t *block, size_t requested_size){
         // change block size to aligned size
         block->size = requested_size;
         block->next = remainder;
+    }
+}
+
+// merging function
+// at the moment, it only does front merging
+void coalesce(header_t *curr) {
+    while (curr->next && curr->next->is_free) {
+        
+        void *curr_end = (char*)curr + sizeof(header_t) + curr->size;
+
+        // only merge if physically adjacent
+        if (curr_end != (void*)curr->next) {
+            break;
+        }
+
+        curr->size += sizeof(header_t) + curr->next->size;
+        curr->next = curr->next->next;
     }
 }
 
@@ -109,8 +126,10 @@ void my_free(void *block) {
     header = (header_t*)block - 1;
 
     // for now just mark it as free
-    // we will later implement the bins and merging of free blocks as also splitting and returning memory to the OS
+    // we will later implement the bins
     header->is_free = 1;
+
+    coalesce(header);
 
     pthread_mutex_unlock(&global_malloc_lock);
 }
